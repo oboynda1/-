@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>JS Магазин</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>Магазин гаджетов</h1>
+        <div id="auth-status">Ща всё будет...</div>
+        <button id="toggle-auth-btn"></button>
+    </header>
+
+    <main id="main-content">
+    </main>
+
+    <div id="cart-modal" class="hidden">
+        <h2>Корзина</h2>
+        <div id="cart-items"></div>
+        <p>Бабок на счету: <span id="user-balance"></span> руб.</p>
+        <button id="buy-btn">Оплатить</button>
+        <button id="close-cart">Закрыть</button>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
+body { font-family: Arial, sans-serif; margin: 0; }
+header { background: #333; color: #fff; padding: 1rem; display: flex; justify-content: space-between; align-items: center; }
+main { padding: 2rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1rem; }
+.card { border: 1px solid #ccc; padding: 1rem; border-radius: 8px; position: relative; }
+.hidden { display: none; }
+#cart-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; padding: 2rem; border: 2px solid #333; z-index: 100; }
+.overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.5); }
+// 1. ЗАБИВАЕМ СТАРТОВЫЕ ДАННЫЕ (ПЕРВЫЙ ЗАПУСК)
+if (!localStorage.getItem('users')) {
+    localStorage.setItem('users', JSON.stringify([
+        {login: 'admin', password: 'adminpass', role: 'admin', balance: 999999},
+        {login: 'user', password: 'userpass', role: 'user', balance: 500}
+    ]));
+}
+if (!localStorage.getItem('products')) {
+    localStorage.setItem('products', JSON.stringify([
+        {id: 1, name: "Умная колонка", desc: "Голосовой помощник", price: 3000, stock: 10, howItWorks: "Подрубается к Wi-Fi и слушает команды"},
+        {id: 2, name: "Беспроводные наушники", desc: "С шумодавом", price: 5000, stock: 5, howItWorks: "Блютуз 5.0, всё по красоте"},
+        {id: 3, name: "Смарт-часы", desc: "Фитнес-трекер", price: 7000, stock: 2, howItWorks: "Считают пульс и твои шаги до холодильника"}
+    ]));
+}
+
+// 2. ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ (СОСТОЯНИЕ)
+let currentUser = null;
+let shoppingCart = [];
+
+// 3. АВТОРИЗАЦИЯ И ТРИ СТЕЙТА: ГОСТЬ, СВОЙ, БОСС
+function checkAuth() {
+    const savedUser = localStorage.getItem('currentUser');
+    if (savedUser) {
+        currentUser = JSON.parse(savedUser);
+    }
+    renderAuthUI();
+    renderContent();
+}
+
+function renderAuthUI() {
+    const statusDiv = document.getElementById('auth-status');
+    const btn = document.getElementById('toggle-auth-btn');
+    if (currentUser) {
+        statusDiv.textContent = `Здарова, ${currentUser.login} (ты тут: ${currentUser.role})`;
+        btn.textContent = 'Тыркнуть на выход';
+    } else {
+        statusDiv.textContent = 'Ты для нас — призрак';
+        btn.textContent = 'Залогиниться';
+    }
+}
+
+function toggleAuth() {
+    if (currentUser) {
+        logout();
+        return;
+    }
+    const login = prompt('Логин, дружище:');
+    const pass = prompt('Пароль, не забудь:');
+    if (!login || !pass) return;
+
+    const users = JSON.parse(localStorage.getItem('users'));
+    const found = users.find(u => u.login === login && u.password === pass);
+
+    if (found) {
+        currentUser = found;
+        localStorage.setItem('currentUser', JSON.stringify(currentUser));
+        localStorage.setItem('balance', found.balance);
+        alert('Красава, заходи!');
+    } else {
+        alert('Не прокатило. Либо логин, либо пароль — мимо.');
+    }
+    checkAuth();
+}
+
+function logout() {
+    currentUser = null;
+    localStorage.removeItem('currentUser');
+    localStorage.removeItem('balance');
+    shoppingCart = [];
+    checkAuth();
+}
+
+// 4. РИСУЕМ ТОВАРЫ И ПРОВЕРЯЕМ КОШЕЛЕК
+function renderContent() {
+    const main = document.getElementById('main-content');
+    main.innerHTML = '';
+
+    if (!currentUser) {
+        main.innerHTML = '<p>Гость, тебе тут ничего не покажут. Жми на кнопку входа.</p>';
+        return;
+    }
+
+    if (currentUser.role === 'admin') {
+        renderAdminPanel();
+        return;
+    }
+
+    const products = JSON.parse(localStorage.getItem('products'));
+    products.forEach(product => {
+        const card = document.createElement('div');
+        card.classList.add('card');
+        card.innerHTML = `
+            <h3>${product.name}</h3>
+            <p>${product.desc}</p>
+            <p><b>С тебя:</b> ${product.price} руб.</p>
+            <p><b>На складе:</b> ${product.stock} шт.</p>
+            <p><b>Чё как работает:</b> ${product.howItWorks}</p>
+            <button onclick="addToCart(${product.id})">Забрать</button>
+        `;
+        main.appendChild(card);
+    });
+}
+
+function validatePurchase() {
+    const balance = parseInt(localStorage.getItem('balance')) || 0;
+    const total = shoppingCart.reduce((sum, item) => sum + item.price, 0);
+    return balance >= total;
+}
+
+function addToCart(id) {
+    const products = JSON.parse(localStorage.getItem('products'));
+    const product = products.find(p => p.id === id);
+    
+    if (product.stock < 1) {
+        alert('Сорян, всё раскупили.');
+        return;
+    }
+
+    const potentialCart = [...shoppingCart, product];
+    const total = potentialCart.reduce((sum, item) => sum + item.price, 0);
+    const balance = parseInt(localStorage.getItem('balance')) || 0;
+
+    if (balance < total) {
+        alert('Братан, денег не хватит. Либо убери что-то, либо иди работать.');
+        return;
+    }
+
+    shoppingCart.push(product);
+    alert(`${product.name} в деле! Лежит в корзине.`);
+}
+
+function openCart() {
+    if (shoppingCart.length === 0) {
+        alert('В корзине гуляет ветер.');
+        return;
+    }
+    document.getElementById('cart-items').innerHTML = '';
+    shoppingCart.forEach(item => {
+        document.getElementById('cart-items').insertAdjacentHTML('beforeend', 
+            `<p>${item.name} — ${item.price} руб.</p>`);
+    });
+    document.getElementById('user-balance').textContent = localStorage.getItem('balance');
+    document.getElementById('cart-modal').classList.remove('hidden');
+    document.body.insertAdjacentHTML('beforeend', '<div class="overlay" onclick="closeCart()"></div>');
+}
+
+function buyItems() {
+    if (!validatePurchase()) {
+        alert('Финансы поют романсы. Не хватает на оплату.');
+        return;
+    }
+
+    const balance = parseInt(localStorage.getItem('balance'));
+    const total = shoppingCart.reduce((sum, item) => sum + item.price, 0);
+    
+    localStorage.setItem('balance', balance - total);
+    currentUser.balance = balance - total;
+    
+    const products = JSON.parse(localStorage.getItem('products'));
+    shoppingCart.forEach(cartItem => {
+        const prod = products.find(p => p.id === cartItem.id);
+        if (prod) prod.stock--;
+    });
+    localStorage.setItem('products', JSON.stringify(products));
+    localStorage.setItem('users', JSON.stringify(JSON.parse(localStorage.getItem('users')).map(u => u.login === currentUser.login ? currentUser : u)));
+
+    alert('Готово! Можешь забирать. Чек на почту не придет, мы же просто тренируемся)');
+    shoppingCart = [];
+    closeCart();
+    checkAuth();
+    renderContent();
+}
+
+function closeCart() {
+    document.getElementById('cart-modal').classList.add('hidden');
+    const overlay = document.querySelector('.overlay');
+    if (overlay) overlay.remove();
+}
+
+// 5. АДМИНКА ДЛЯ СВОИХ
+function renderAdminPanel() {
+    const main = document.getElementById('main-content');
+    const products = JSON.parse(localStorage.getItem('products'));
+    main.innerHTML = '<h2>Кабинет босса</h2>';
+    
+    products.forEach(p => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `<h3>${p.name}</h3>
+            <input type="number" id="stock-${p.id}" value="${p.stock}" placeholder="Штук">
+            <input type="number" id="price-${p.id}" value="${p.price}" placeholder="Цена">
+            <button onclick="updateProduct(${p.id})">Зафиксировать</button>`;
+        main.appendChild(card);
+    });
+}
+
+function updateProduct(id) {
+    const products = JSON.parse(localStorage.getItem('products'));
+    const prod = products.find(p => p.id === id);
+    const newStock = parseInt(document.getElementById(`stock-${id}`).value);
+    const newPrice = parseInt(document.getElementById(`price-${id}`).value);
+    
+    if (!isNaN(newStock)) prod.stock = newStock;
+    if (!isNaN(newPrice)) prod.price = newPrice;
+    
+    localStorage.setItem('products', JSON.stringify(products));
+    alert('Данные обновлены, всё четко.');
+    renderAdminPanel();
+}
+
+// 6. КНОПКИ И СТАРТ ДВИЖУХИ
+document.getElementById('toggle-auth-btn').addEventListener('click', toggleAuth);
+document.getElementById('buy-btn').addEventListener('click', buyItems);
+document.getElementById('close-cart').addEventListener('click', closeCart);
+
+checkAuth();
